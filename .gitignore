@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# 检索层缓存（非真相，可重建）
+.index/
+.kb_cache/
+*.sqlite3
+*.db
+
+# 环境配置（含 API key）
+.env
+
+# Obsidian
+.obsidian/workspace*.json
+.obsidian/cache
