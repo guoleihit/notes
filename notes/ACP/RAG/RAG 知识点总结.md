@@ -1,7 +1,7 @@
 # RAG 知识点总结
 
-> 归纳来源：`RAG 错题复习 2026-09-16 / 09-17 / 09-19` 三篇笔记
-> 整理日期：2026-09-19
+> 归纳来源：`RAG 错题复习 2026-09-16 / 09-17 / 09-19 / 09-20` 四篇笔记
+> 整理日期：2026-09-20（新增 09-20 错题）
 > 说明：正文带「补充」标记的内容为错题之外的扩展知识，用于建立完整认知；文末附参考文献。
 
 ---
@@ -20,10 +20,12 @@
   - [3.1 什么时候该切得更小？](#31-什么时候该切得更小)
   - [3.2 各切片方法适用场景](#32-各切片方法适用场景)
   - [3.3 关键数据的「语义独立性与完整性」](#33-关键数据的语义独立性与完整性)
+  - [3.4 基于语义的切片理念](#34-基于语义的切片理念)
 - [4. 嵌入模型与向量化](#4-嵌入模型与向量化)
   - [4.1 大模型 vs Embedding 模型（分工必背）](#41-大模型-vs-embedding-模型分工必背)
   - [4.2 常见嵌入模型](#42-常见嵌入模型)
   - [4.3 `compare_embeddings` 函数](#43-compare_embeddings-函数)
+  - [4.4 文本向量化的三个正确认识](#44-文本向量化的三个正确认识)
 - [5. 检索召回优化](#5-检索召回优化)
   - [5.1 相似度阈值与召回数量](#51-相似度阈值与召回数量)
   - [5.2 标签增强检索（Metadata Filtering）](#52-标签增强检索metadata-filtering)
@@ -31,9 +33,11 @@
   - [5.4 HyDE（Hypothetical Document Embeddings）](#54-hydehypothetical-document-embeddings)
   - [5.5 检索后减少无关信息](#55-检索后减少无关信息)
   - [5.6 提高知识索引/检索性能的技术](#56-提高知识索引检索性能的技术)
+  - [5.7 扩充信息以提升召回（Query Expansion / 用户画像）](#57-扩充信息以提升召回query-expansion--用户画像)
 - [6. 多轮对话与查询改写](#6-多轮对话与查询改写)
   - [6.1 `custom_chat_history` 的作用](#61-custom_chat_history-的作用)
   - [6.2 机制：问题改写（Query Rewriting）](#62-机制问题改写query-rewriting)
+  - [6.3 问题改写：检索前还原真实意图](#63-问题改写检索前还原真实意图)
 - [7. 复杂问题求解：分解与多步检索](#7-复杂问题求解分解与多步检索)
   - [7.1 核心框架：「分解 — 执行 — 合成」](#71-核心框架分解--执行--合成)
   - [7.2 常用框架与工具](#72-常用框架与工具)
@@ -43,6 +47,7 @@
 - [8. GraphRAG](#8-graphrag)
   - [8.1 它结合了哪两种技术？](#81-它结合了哪两种技术)
   - [8.2 优势](#82-优势)
+  - [8.3 高级 RAG 课题](#83-高级-rag-课题)
 - [9. 幻觉治理与噪声抑制](#9-幻觉治理与噪声抑制)
   - [9.1 减少幻觉的三层措施](#91-减少幻觉的三层措施)
   - [9.2 召回噪声：搜索「包子」却出现「书包」](#92-召回噪声搜索包子却出现书包)
@@ -181,6 +186,22 @@ index = load_index_from_storage(storage_context)
 
 > 补充：常见进阶策略还有「父子分块（Small-to-Big）」——用小块做检索、用其父块做生成，兼顾精度与上下文完整（LlamaIndex `SentenceWindowNodeParser`、`HierarchicalNodeParser` 等）。
 
+### 3.4 基于语义的切片理念
+
+题目：以下哪些做法符合「基于语义的文档切片」理念？**答案：B、D、E、F**。
+
+| 选项 | 判断 | 说明 |
+|---|---|---|
+| A. 按固定长度切分 | ❌ | 机械切分，容易切断句子、段落和语义单元 |
+| B. 按标题、段落、列表等结构切分 | ✅ | 结构与语义边界一致，尽量保持语义完整 |
+| C. 表格每个单元格独立成 Chunk | ❌ | 破坏行列关系与整体语义，应保留表头、按行或整体切 |
+| D. 在 Chunk 中添加上下文（标题、父级列表项等） | ✅ | 上下文增强，避免切片脱离原文后语义不清 |
+| E. 用机器学习模型分析语义边界并切分 | ✅ | 最典型、最直接的「基于语义切片」 |
+| F. 代码块单独切分并标注编程语言 | ✅ | 保持代码完整、保留语义，便于检索与生成 |
+
+> 关键认识：**语义切片 ≠ 只靠模型**。按文档结构切分、给 Chunk 补上下文、代码块保持完整，都属于「保语义完整」的语义切片范畴；而「固定长度」「把表格单元格打散」属于机械切分。
+> 补充：语义切片常用「相邻句子/段落向量相似度骤降处」作为切分点（LangChain `SemanticChunker` 思路）。
+
 ---
 
 ## 4. 嵌入模型与向量化
@@ -218,6 +239,16 @@ index = load_index_from_storage(storage_context)
 - **不是参数**：`cosine_similarity`——它是内部使用的相似度计算方法。
 
 > 另有一个 `compare_embedding_models`（带 ground_truth）在 LlamaIndex / RAGAS 官方文档中查无标准定义，很可能来自特定课程的自定义封装，**以课程材料为准**。
+
+### 4.4 文本向量化的三个正确认识
+
+题目：在文本向量化过程中，以下哪些描述正确？**答案：A、B、C**。
+
+- **A. Embedding 模型把自然语言转化为数字形式**：核心作用就是把文本映射成数字向量，用数字表示语义。
+- **B. 使用余弦相似度衡量向量相似度**：向量化后常用余弦相似度衡量语义相近程度，归一化后的 embedding 尤其常见。
+- **C. Embedding 模型的训练包含对比学习**：现代文本 embedding（Sentence-BERT、SimCSE、BGE 等）训练中通常含对比学习，通过**拉近正样本、推远负样本**学习语义向量。
+
+> 补充：余弦相似度 = 两向量夹角的余弦；向量归一化后，余弦相似度与点积等价。
 
 ---
 
@@ -280,6 +311,19 @@ index = load_index_from_storage(storage_context)
 - **BGE 新嵌入模型**：直接提升向量化表示质量，属于「换更强的嵌入模型」。
 - 其余多属**查询优化**（Decomposition、Step Back）或**检索策略**（CRAG 互联网检索），不涉及嵌入模型本身。
 
+### 5.7 扩充信息以提升召回（Query Expansion / 用户画像）
+
+题目：哪些方法通过**增加更多信息**让检索结果更全面？**答案：A、B**。
+
+| 选项 | 判断 | 说明 |
+|---|---|---|
+| A. 问题扩写（Query Expansion） | ✅ | 在原始 query 中加入同义词、相关概念、背景信息，增加信息量，召回更全面 |
+| B. 基于用户画像扩展上下文 | ✅ | 把用户偏好、历史行为、场景加入查询理解，增加个性化信息，优化召回范围 |
+| C. 问题改写（Query Rewriting） | ❌ | 通常只是换表达（同义替换、纠错、规范化）或生成多个等价 query，**不一定增加新信息** |
+| D. 重排序（Rerank） | ❌ | 召回之后的排序/精排，不增加信息，也不扩大召回集合 |
+
+> 判断标准：**是否引入了原始 query 之外的新信息**。扩写 / 画像扩展 = 加信息；改写 = 换说法；重排序 = 只是重排。
+
 ---
 
 ## 6. 多轮对话与查询改写
@@ -306,6 +350,19 @@ index = load_index_from_storage(storage_context)
 **技术形式**：通常是含 `user`/`assistant` 的消息列表，可通过代码（如 LlamaIndex `CondenseQuestionChatEngine`）或 API 传递。
 
 > 补充：常与「Query Rewriting / Condense Question」并用的还有多轮检索中保留「对话摘要」，避免历史过长挤占上下文窗口。
+
+### 6.3 问题改写：检索前还原真实意图
+
+题目：以下哪些方法用于在**检索前**还原用户真实意图？**答案：A、B、C**。
+
+| 选项 | 判断 | 说明 |
+|---|---|---|
+| A. 用大模型扩充用户问题 | ✅ | 查询扩展/改写：补充同义表达、背景信息、潜在意图，更全面理解真实需求 |
+| B. 将单一查询改写为多步骤查询 | ✅ | 查询分解/多步改写：把复杂 query 拆成子查询，更贴近真实意图，便于多路召回 |
+| C. 用假设文档增强检索（HyDE） | ✅ | 生成假设文档再检索，缩小 query 与文档的语义差距，还原检索意图 |
+| D. 重排序 | ❌ | 发生在召回**之后**，对已检索文档重排，不属于检索前改写，也不负责还原意图 |
+
+> 对照记忆：**检索前**改 query（扩写 / 分解 / HyDE）；**检索后**重排结果（Rerank）。
 
 ---
 
@@ -363,6 +420,19 @@ index = load_index_from_storage(storage_context)
 | 提高模型训练速度 | ❌ | 不涉及，反而可能增加图构建开销 |
 
 > 补充：GraphRAG 由微软于 2024 年提出，通过「社区检测 + 社区摘要」解决传统 RAG 难以回答「整体趋势/总结类」全局问题。
+
+### 8.3 高级 RAG 课题
+
+题目：构建 RAG 应用时，哪些高级 RAG 课题值得探索？**答案：A、B、C**。
+
+| 选项 | 判断 | 说明 |
+|---|---|---|
+| A. GraphRAG 技术 | ✅ | 结合知识图谱、图检索与多跳推理，提升全局性、关联性问题的召回与回答 |
+| B. 可视化工作流 | ✅ | 工程化课题：编排、调试、监控 RAG 流程（检索、路由、生成、评估） |
+| C. 智能体编排（Agentic RAG） | ✅ | 智能体规划、工具调用、多步检索、反思与纠错 |
+| D. LlamaIndex 组件 | ❌ | 偏具体框架的工具/组件，是**实现手段**，通常不算独立的高级 RAG 课题 |
+
+> 一句话：高级 RAG = **GraphRAG（图）+ 可视化工作流（工程）+ Agentic RAG（智能体）**；框架组件是脚手架，不是课题本身。
 
 ---
 
@@ -509,6 +579,10 @@ index = load_index_from_storage(storage_context)
 | 大模型 vs Embedding 模型 | 生成/理解/判断用大模型；向量化/相似度/检索用 Embedding |
 | Answer Relevancy vs Faithfulness | 前者问「切题吗」，后者问「有出处吗」 |
 | Context Precision vs Context Recall | 前者看排序（相关项是否靠前），后者看是否把相关项都召回 |
+| 问题扩写 vs 问题改写 | 扩写引入**新信息**（同义词/背景）；改写多为换表达，不一定加信息 |
+| 检索前改写 vs 检索后重排序 | 前者改 query，后者对已召回结果重排 |
+| 语义切片 vs 固定长度切片 | 前者按结构/语义边界，后者机械切分易断语义 |
+| GraphRAG vs Agentic RAG | 前者靠知识图谱，后者靠智能体规划与工具调用 |
 
 ---
 
@@ -528,13 +602,17 @@ index = load_index_from_storage(storage_context)
 10. Yan et al. *Corrective Retrieval Augmented Generation*（CRAG）. arXiv:2401.15884
 11. Asai et al. *Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection*. arXiv:2310.11511
 12. Liu et al. *Lost in the Middle: How Language Models Use Long Contexts*. arXiv:2307.03172
+13. Reimers & Gurevych. *Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks*. EMNLP 2019. arXiv:1908.10084
+14. Gao et al. *SimCSE: Simple Contrastive Learning of Sentence Embeddings*. EMNLP 2021. arXiv:2104.08821
+15. Carpineto & Romano. *A Survey of Automatic Query Expansion in Information Retrieval*. ACM Computing Surveys, 44(1), 2012.
+16. Singh et al. *Agentic Retrieval-Augmented Generation: A Survey on Agentic RAG*. arXiv:2501.09136
 
 **官方文档**
 
-13. LlamaIndex 官方文档：https://docs.llamaindex.ai
-14. OpenAI Embeddings 指南：https://platform.openai.com/docs/guides/embeddings
-15. 阿里云百炼 文本嵌入 API：https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api
-16. RAGAS 官方文档：https://docs.ragas.io
+17. LlamaIndex 官方文档：https://docs.llamaindex.ai
+18. OpenAI Embeddings 指南：https://platform.openai.com/docs/guides/embeddings
+19. 阿里云百炼 文本嵌入 API：https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api
+20. RAGAS 官方文档：https://docs.ragas.io
 
 ---
 
@@ -562,3 +640,7 @@ index = load_index_from_storage(storage_context)
 - [ ] AnswerCorrectness：大模型提观点 + Embedding 算相似度。
 - [ ] Context Precision：结合 question 与 ground_truth 判断相关性，按排序计算。
 - [ ] 私域知识走 RAG 注入，不要全量直塞 Prompt。
+- [ ] 语义切片理念：结构切分 + 上下文增强 + 模型语义边界 + 代码块完整；固定长度 / 表格打散不算。
+- [ ] 文本向量化三认识：数字向量 + 余弦相似度 + 对比学习。
+- [ ] 问题扩写增加**新信息**，问题改写不一定；重排序不增加信息。
+- [ ] 高级 RAG 课题：GraphRAG、可视化工作流、Agentic RAG（框架组件不算）。
