@@ -1,132 +1,132 @@
-# my-kb 使用说明
+# my-kb User Guide
 
-一个个人学习知识库：笔记是纯文本 Markdown，用**关键词检索 + 大模型问答**代替繁重的分类整理。
+A personal learning knowledge base: notes are plain-text Markdown, and **keyword search + LLM Q&A** replace heavy-handed categorization.
 
-## 一句话理解
+## The Idea in One Sentence
 
-你只管把笔记**分类好、随手丢进 `notes/` 目录**，剩下的（检索、问答、找关联）交给 `kb` 命令。不用 embedding、不用向量库、不花额外 API 钱。
+Just drop your notes into the `notes/` directory, organized however you like. Everything else (search, Q&A, finding connections) is handled by the `kb` command. No embeddings, no vector database, no extra API costs.
 
-## 核心流程：grep 找，大模型答
+## Core Workflow: grep to Find, LLM to Answer
 
 ```
-① 记笔记              ② 检索               ③ 问答 / 整理
-   │                     │                    │
-   ▼                     ▼                    ▼
-notes/ 下按目录      kb grep "关键词"     kb ask "问题"
-分类写 Markdown      （grep 关键词命中）    （命中文档→GLM→答案）
-                                          kb lint（找关联/孤立）
+① Take notes          ② Search              ③ Ask / Organize
+   │                     │                     │
+   ▼                     ▼                     ▼
+Write Markdown        kb grep "keyword"     kb ask "question"
+under notes/,         (grep keyword hits)   (hit docs → GLM → answer)
+organized by folder                         kb lint (find links/orphans)
 ```
 
-**为什么不是"语义搜索"？** 语义搜索要 embedding（额外 API 成本 + 本地高配置）。改用 grep 关键词匹配，零成本、可解释、实时。代价是"说法不同"会漏，靠**良好目录分类 + 命名**弥补。
+**Why not "semantic search"?** Semantic search requires embeddings (extra API cost + a powerful local machine). Keyword matching via grep is free, explainable, and real-time. The trade-off is missing results when wording differs, which is offset by **good folder organization + clear naming**.
 
-## 一次性配置
+## One-Time Setup
 
-1. 装了 Python 3.11+，安装依赖：
+1. Install Python 3.11+ and the dependencies:
 
    ```
    pip install -e .
    ```
 
-2. 在项目根目录创建 `.env`（已存在则直接改），填你的 **OpenCode Go** API key（在 [opencode.ai/auth](https://opencode.ai/auth) 获取）：
+2. Create a `.env` file in the project root (edit it if it already exists) and fill in your **OpenCode Go** API key (get one at [opencode.ai/auth](https://opencode.ai/auth)):
 
    ```
    KB_LLM_BASE_URL=https://opencode.ai/zen/go/v1
-   KB_LLM_API_KEY=你的Go key
+   KB_LLM_API_KEY=your Go key
    KB_LLM_MODEL=glm-5.2
    ```
 
-   这里复用的是你已有的 Go 订阅（GLM 聊天模型），零额外成本。想换别的 OpenAI 兼容服务，改这三行即可（智谱、本地 Ollama 等）。
+   This reuses your existing Go subscription (the GLM chat model) at zero extra cost. To switch to another OpenAI-compatible service, just change these three lines (Zhipu, local Ollama, etc.).
 
-## 日常使用
+## Daily Usage
 
-### 记笔记
+### Taking Notes
 
-在 `notes/` 下按目录分类写 Markdown（推荐 Obsidian 打开 `notes/` 目录当编辑器）。**文件名和标题起得清楚点**——它们是 grep 检索的关键。
+Write Markdown under `notes/`, organized by folder (Obsidian is recommended — open the `notes/` directory as a vault). **Give files and titles clear names** — they are the key to grep search.
 
-### 草稿与发布
+### Drafts and Publishing
 
-灵感来了先丢 `drafts/`（不参与 grep/ask/lint），想清楚了再发布：
-
-```
-kb publish "临时灵感"           # 移到 notes/
-kb publish "临时灵感" -t 主题A   # 移到 notes/主题A/
-```
-
-- 草稿文件名可省略 `.md`
-- 目标已有同名文件时会拒绝覆盖
-- 草稿区在 Obsidian 里和 notes 同 vault，随手拖拽也行
-
-### 检索：kb grep
+Jot down ideas in `drafts/` first (excluded from grep/ask/lint), then publish when they're ready:
 
 ```
-kb grep 向量 检索
+kb publish "temporary idea"           # move to notes/
+kb publish "temporary idea" -t TopicA # move to notes/TopicA/
 ```
 
-按关键词命中排序，输出命中的笔记和片段：
+- The `.md` extension can be omitted from draft filenames
+- Publishing refuses to overwrite a file with the same name at the destination
+- The drafts folder lives in the same Obsidian vault as notes, so dragging and dropping works too
+
+### Search: kb grep
 
 ```
-向量检索.md  (命中 2 词, 10 次)
-  1: # 向量检索（Vector Search）
-  5: 把文本转成高维向量……
+kb grep vector search
 ```
 
-命中更多关键词的排在前面；没命中会明确提示。
-
-### 问答：kb ask
+Ranks by keyword hits and shows the matching notes and snippets:
 
 ```
-kb ask "什么是向量检索，和关键词检索有什么区别" -k 向量 检索
+vector-search.md  (2 words hit, 10 times)
+  1: # Vector Search
+  5: Convert text into high-dimensional vectors……
 ```
 
-流程：用 `-k` 的关键词 grep 命中笔记 → 把命中的笔记内容 + 你的问题交给 GLM → 返回答案。
+Notes matching more keywords rank higher; if nothing matches, it says so explicitly.
 
-- `-k` 可省略，省略时从问题里自动提取词。
-- `-n 3` 控制喂给模型的笔记篇数（默认 3）。
-- 没找到相关笔记时，会提示而非编造。
+### Q&A: kb ask
 
-### 整理：kb lint
+```
+kb ask "What is vector search and how does it differ from keyword search" -k vector search
+```
+
+Workflow: use the `-k` keywords to grep matching notes → feed the matched notes plus your question to GLM → return the answer.
+
+- `-k` is optional; when omitted, words are extracted from the question automatically.
+- `-n 3` controls how many notes are fed to the model (default 3).
+- When no relevant notes are found, it says so instead of making things up.
+
+### Organizing: kb lint
 
 ```
 kb lint
 ```
 
-按需整理知识库，输出：
+Organizes the knowledge base on demand, outputting:
 
-- **关联建议**：内容相关、但还没互相链接的笔记对（建议你补 `[[双链]]`）
-- **孤立笔记**：跟谁都关联不上的笔记
+- **Link suggestions**: pairs of notes that are related in content but not yet linked (suggesting you add a `[[wiki link]]`)
+- **Orphan notes**: notes that connect to nothing else
 
-它是**增量**的：结果记在 `.kb_cache/lint.json`，下次只处理新增/改动的笔记，不重复劳动。
+It is **incremental**: results are stored in `.kb_cache/lint.json`, and only new/changed notes are processed next time.
 
-- `--threshold 2` 判定相关的特征重叠数（默认 2，越小越敏感，可能误报越多）。
-- `-n 5` 每篇笔记显示的关联条数（默认 5）。
+- `--threshold 2` sets the number of overlapping features required to count as related (default 2; lower is more sensitive and may produce more false positives).
+- `-n 5` sets how many links are shown per note (default 5).
 
-## 命令速查
+## Command Reference
 
-| 命令 | 作用 |
+| Command | Purpose |
 |------|------|
-| `kb grep "词1" "词2"` | 关键词检索，列命中文档与片段 |
-| `kb ask "问题" -k 词1 词2` | 检索命中 → 大模型回答 |
-| `kb lint` | 找关联建议 + 孤立笔记（增量） |
-| `kb publish "草稿" -t 子目录` | 把草稿从 drafts/ 发布到 notes/ |
+| `kb grep "word1" "word2"` | Keyword search; lists matching documents and snippets |
+| `kb ask "question" -k word1 word2` | Search hits → LLM answer |
+| `kb lint` | Find link suggestions + orphan notes (incremental) |
+| `kb publish "draft" -t subdir` | Publish a draft from drafts/ to notes/ |
 
-## 项目结构
+## Project Structure
 
 ```
 my-kb/
-├── notes/        ← 正式笔记（纯 Markdown，进入检索/问答/lint，git 管理）
-├── drafts/       ← 草稿区（快速记灵感，不参与检索，发布后进 notes/）
-├── kb/           ← 检索/问答/整理/发布的 Python 代码
-├── .kb_cache/    ← 缓存（lint 档案，可删，会自动重建）
-├── .env          ← LLM 配置（含 key，已被 gitignore）
-└── openspec/     ← 变更管理（可忽略）
+├── notes/        ← Official notes (plain Markdown; included in search/Q&A/lint; git-managed)
+├── drafts/       ← Draft area (quick ideas; excluded from search; moves to notes/ once published)
+├── kb/           ← Python code for search/Q&A/organizing/publishing
+├── .kb_cache/    ← Cache (lint archive; safe to delete, rebuilt automatically)
+├── .env          ← LLM config (contains keys; gitignored)
+└── openspec/     ← Change management (can be ignored)
 ```
 
-## 常见问题
+## FAQ
 
-**笔记会丢吗？** 不会。笔记就是 `notes/` 下的纯文本 Markdown，配合 git 版本化。删掉 `.kb_cache/` 不影响笔记，`kb lint` 会重建档案。
+**Will I lose my notes?** No. Notes are plain-text Markdown under `notes/`, versioned with git. Deleting `.kb_cache/` does not affect notes; `kb lint` will rebuild the archive.
 
-**`kb grep` 和 `kb ask` 的关系？** `grep` 是纯检索（不用大模型，免费）；`ask` 是检索 + 回答（用 Go 的 GLM，按需调）。不确定关键词时先用 `grep` 探路。
+**What's the relationship between `kb grep` and `kb ask`?** `grep` is pure search (no LLM, free); `ask` is search + answer (uses Go's GLM, called on demand). When unsure about keywords, use `grep` first to scout.
 
-**想换大模型？** 改 `.env` 三行，例如切本地 Ollama：`KB_LLM_BASE_URL=http://localhost:11434/v1` + 对应模型名。
+**Want to switch LLMs?** Change the three lines in `.env`, e.g. to switch to local Ollama: `KB_LLM_BASE_URL=http://localhost:11434/v1` + the corresponding model name.
 
-**关联不够准？** 先用零成本的 `kb lint`；将来需要更准的语义关联，可以再引入 embedding（升级路径开放）。
+**Not accurate enough on connections?** Start with the zero-cost `kb lint`; if you need more accurate semantic connections later, embeddings can be introduced (the upgrade path is open).
