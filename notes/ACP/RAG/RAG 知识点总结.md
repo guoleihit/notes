@@ -1,7 +1,7 @@
 # RAG 知识点总结
 
-> 归纳来源：`RAG 错题复习 2026-09-16 / 09-17 / 09-19 / 09-20` 四篇笔记
-> 整理日期：2026-09-20（新增 09-20 错题）
+> 归纳来源：`RAG 错题复习 2026-09-16 / 09-17 / 09-19 / 09-20 / 09-21 / 09-22` 六篇笔记
+> 整理日期：2026-09-22（新增 09-21、09-22 错题）
 > 说明：正文带「补充」标记的内容为错题之外的扩展知识，用于建立完整认知；文末附参考文献。
 
 ---
@@ -16,6 +16,7 @@
   - [2.3 索引的四个动作（极易混淆）](#23-索引的四个动作极易混淆)
   - [2.4 目录不存在 / 已存在，分别怎么做？](#24-目录不存在--已存在分别怎么做)
   - [2.5 加载本地索引可设置哪些参数？](#25-加载本地索引可设置哪些参数)
+  - [2.6 查询引擎参数：similarity_top_k](#26-查询引擎参数similarity_top_k)
 - [3. 文档切片（Chunking）](#3-文档切片chunking)
   - [3.1 什么时候该切得更小？](#31-什么时候该切得更小)
   - [3.2 各切片方法适用场景](#32-各切片方法适用场景)
@@ -26,6 +27,7 @@
   - [4.2 常见嵌入模型](#42-常见嵌入模型)
   - [4.3 `compare_embeddings` 函数](#43-compare_embeddings-函数)
   - [4.4 文本向量化的三个正确认识](#44-文本向量化的三个正确认识)
+  - [4.5 `embedding_models` 字典的作用](#45-embedding_models-字典的作用)
 - [5. 检索召回优化](#5-检索召回优化)
   - [5.1 相似度阈值与召回数量](#51-相似度阈值与召回数量)
   - [5.2 标签增强检索（Metadata Filtering）](#52-标签增强检索metadata-filtering)
@@ -56,9 +58,13 @@
   - [10.1 四大核心指标对比](#101-四大核心指标对比)
   - [10.2 各指标如何评判](#102-各指标如何评判)
   - [10.3 一个典型反例（帮助区分指标）](#103-一个典型反例帮助区分指标)
+  - [10.4 指标归属：检索 / 生成 / 端到端](#104-指标归属检索--生成--端到端)
+  - [10.5 AnswerCorrectness 计算细节与 answer_accuracy 对比](#105-answercorrectness-计算细节与-answer_accuracy-对比)
 - [11. 工程架构与实践](#11-工程架构与实践)
   - [11.1 为什么优化后的答疑机器人不需要每次都走 RAG？](#111-为什么优化后的答疑机器人不需要每次都走-rag)
   - [11.2 知识库上传的单文档大小限制](#112-知识库上传的单文档大小限制)
+  - [11.3 安全与合规：提示词注入与敏感词拦截](#113-安全与合规提示词注入与敏感词拦截)
+  - [11.4 时效性问题与联网搜索](#114-时效性问题与联网搜索)
 - [12. 高频易混点速查](#12-高频易混点速查)
 - [13. 参考文献](#13-参考文献)
 - [14. 关联](#14-关联)
@@ -155,6 +161,37 @@ index = load_index_from_storage(storage_context)
 
 > 补充：`load_index_from_storage(..., embed_model=...)` 时若模型不一致，会导致检索质量骤降，这是线上常见事故点。
 
+### 2.6 查询引擎参数：similarity_top_k
+
+**召回文本段个数在创建查询引擎时设置**：
+
+```python
+query_engine = index.as_query_engine(
+    similarity_top_k=3,        # 召回文本段数量，默认通常为 1 或 2
+    response_mode="compact",   # 答案合成方式（compact / tree_summarize 等）
+    verbose=True,
+)
+response = query_engine.query("你的问题")
+```
+
+| 选项 | 判断 | 说明 |
+|---|---|---|
+| `from_documents(similarity_top_k)` | ❌ | `from_documents` 用于**构建索引** |
+| `as_query_engine(similarity_top_k)` | ✅ | 创建查询引擎时指定召回数量 |
+| `query(similarity_top_k)` | ❌ | `query()` 只负责执行查询 |
+| `print_response_stream(...)` | ❌ | 打印流式响应 |
+
+> 易错点：`similarity_top_k` 设在**查询引擎创建阶段**，而不是查询执行阶段。
+
+**「建立索引」阶段 vs 「查询」阶段**（高频判断题）：
+
+| 阶段 | 处理对象 | 主要步骤 |
+|---|---|---|
+| 建立索引 | **文档** | 解析为纯文本 → 切分为小片段 → 片段向量化 → 存入向量库 |
+| 查询 / 检索 | **用户问题** | 把用户问题转成向量 → 相似度检索 → 重排 → 生成 |
+
+> 因此「**将用户问题转换为向量表示**」**不属于**建立索引阶段，而属于查询/检索阶段。
+
 ---
 
 ## 3. 文档切片（Chunking）
@@ -250,6 +287,22 @@ index = load_index_from_storage(storage_context)
 
 > 补充：余弦相似度 = 两向量夹角的余弦；向量归一化后，余弦相似度与点积等价。
 
+### 4.5 `embedding_models` 字典的作用
+
+在「切片向量化与存储」阶段，`embedding_models` 通常是**管理不同 embedding 模型实例的字典**。
+
+**典型作用**：
+
+- 注册 / 保存不同的 embedding 模型实例；
+- 按模型名称或配置获取对应模型；
+- 复用已初始化的模型，避免重复加载；
+- 为切片批量生成向量：`embedding_models[model_name].embed_documents(texts)`；
+- 支持多模型、多知识库、多集合切换。
+
+**一般不属于它的作用**：存切片文本、存向量结果、存向量数据库连接 / 索引 / 集合、执行文档切片、保存检索结果或元数据。
+
+> 速记：`embedding_models` 管的是「**模型实例**」，不是「**数据存储**」。
+
 ---
 
 ## 5. 检索召回优化
@@ -259,6 +312,8 @@ index = load_index_from_storage(storage_context)
 - 界面里的「检索片段数」是**上限（Top-K）**，不是必须返回的数量。
 - 最终召回 = **通过相似度阈值过滤后的数量**。例：K=5，但高于阈值的只有 3 块 → 实际召回 **3** 块。
 - 阈值越高，噪声越少但可能漏召回；阈值越低，召回多但噪声多。
+- **案例一（召回太少）**：系统总是只检索到**一个无关切片** → 提高 Top-K，返回更多候选。换更大参数量的模型只影响生成，放弃知识库易产生幻觉，都不能解决问题。
+- **案例二（阈值过高）**：阈值从 0.7 提到 0.95 → 过滤掉「相关但表述不同、相似度略低」的上下文 → 答案**准确但不全面**，部分问题答不好。**阈值不是越高越好**。
 
 ### 5.2 标签增强检索（Metadata Filtering）
 
@@ -533,6 +588,53 @@ index = load_index_from_storage(storage_context)
 
 > 结论：Answer Relevancy 评判答案的**切题程度**，独立于忠实度与检索质量。
 
+### 10.4 指标归属：检索 / 生成 / 端到端
+
+题目：`faithfulness`、`answer_relevancy`、`context_recall`、`context_precision` 中，哪个**仅评估生成阶段**？**答案：`faithfulness`**。
+
+| 指标 | 归属阶段 |
+|---|---|
+| `context_precision` | **检索阶段**（检索上下文质量） |
+| `context_recall` | **检索阶段**（检索上下文质量） |
+| `faithfulness` | **生成阶段**（答案是否忠于上下文、有无幻觉） |
+| `answer_correctness` | **端到端**（答案 vs 标准答案） |
+
+> 记忆：`context_*` 属检索；`faithfulness` 属生成；`answer_correctness` 属端到端。做题先分清检索 / 生成 / 端到端三层。
+
+### 10.5 AnswerCorrectness 计算细节与 answer_accuracy 对比
+
+`answer_correctness` 是**端到端指标**，衡量生成答案与 `ground_truth` 的匹配程度，由「事实性」和「语义相似度」加权融合：
+
+1. **事实性（Factual Correctness）**：把答案拆成事实陈述并分类——
+   - **TP**：生成答案与标准答案都出现的事实；
+   - **FP**：只在生成答案中出现的事实（幻觉 / 错误）；
+   - **FN**：只在标准答案中出现、生成答案遗漏的事实。
+   计算 F1 分数：`F1 = |TP| / (|TP| + 0.5 × (|FP| + |FN|))`。
+2. **语义相似度（Semantic Similarity）**：生成答案与标准答案向量嵌入的余弦相似度。
+3. **最终得分**：默认权重 `[0.75, 0.25]`，即事实性 75%、语义相似度 25%。
+
+**与 `answer_accuracy` 的区别**：
+
+| 指标 | 机制 | 特点 |
+|---|---|---|
+| `answer_correctness` | 陈述分解 + 分类，可解释性高 | 需 3 次 LLM 调用 |
+| `answer_accuracy` | 双法官系统，2 次独立判断 | 可解释性较低 |
+
+```python
+from datasets import Dataset
+from ragas.metrics import answer_correctness
+from ragas import evaluate
+
+data_samples = {
+    "question": ["When was the first super bowl?"],
+    "answer": ["The first superbowl was held on Jan 15, 1967"],
+    "ground_truth": ["The first superbowl was held on January 15, 1967"],
+}
+dataset = Dataset.from_dict(data_samples)
+score = evaluate(dataset, metrics=[answer_correctness])
+print(score.to_pandas())
+```
+
 ---
 
 ## 11. 工程架构与实践
@@ -548,6 +650,24 @@ index = load_index_from_storage(storage_context)
 
 好处：① 省掉向量检索、重排、拼接上下文的开销，降低延迟与成本；② 避免不必要检索引入无关片段干扰推理。
 
+**`ask_llm_route`：问题路由 / 意图分发器**
+
+它根据用户问题判断任务类型并返回对应处理方式，**自身不直接回答问题**：
+
+```python
+def ask_llm_route(question):
+    if is_review_question(question):
+        return reviewed_prompt        # 提示词审查类
+    elif is_translate_question(question):
+        return translate_prompt       # 翻译类
+    elif is_query_engine_question(question):
+        return query_engine           # 查询引擎类
+    else:
+        return rag.ask                # 无法识别 / 通用问答 → 默认兜底
+```
+
+> 无法识别问题类型时，走**默认兜底分支**，交给通用 RAG 问答流程，即返回 `rag.ask`。
+
 ### 11.2 知识库上传的单文档大小限制
 
 **没有统一标准，取决于平台。** 课程场景答案为 **100MB**（腾讯云 TCDataAgent 默认值）。
@@ -562,6 +682,34 @@ index = load_index_from_storage(storage_context)
 | 腾讯云（另一产品） | 200MB | 表格类文件为 20MB |
 
 **实践建议**：查具体平台官方文档，或检查环境变量（如 `MAX_CONTENT_LENGTH`、`UPLOAD_FILE_SIZE_LIMIT`）。
+
+### 11.3 安全与合规：提示词注入与敏感词拦截
+
+**提示词注入获取知识库元数据 → 最有效的防护是系统层权限控制**：
+
+| 选项 | 判断 | 说明 |
+|---|---|---|
+| A. 知识检索阶段严格限制数据访问权限 | ✅ | 只让应用访问当前用户有权查看的数据，元数据 / 非公开信息隔离，遵循最小权限 |
+| B. 过滤「元数据」等关键词 | ❌ | 易被绕过（换词、编码、间接提问） |
+| C. 让大模型避免回答这类问题 | ❌ | 软约束，注入可覆盖或绕过 |
+| D. 避免列表形式输出 | ❌ | 与防止元数据泄露无关 |
+
+**敏感词实时拦截（金融投顾场景）→ 在用户提问时实时检测**：
+
+- 命中「内幕消息」等敏感词，立即返回预设合规话术，**不进入后续检索 / 生成**，响应最快、最可控。
+- A 生成后二次审核有延迟；B 知识库预筛查管的是文档内容；D 微调只降低风险话题概率，都不能满足「立即返回固定话术」。
+
+> 速记：**防注入靠权限隔离**（系统层 > 提示词过滤）；**敏感词靠输入前置拦截**。
+
+### 11.4 时效性问题与联网搜索
+
+题目：「总结今早的十大新闻」这类**强时效**需求，哪些方案可行？**答案：B、C**。
+
+- A. 历史新闻库 + RAG ❌：知识库可能未更新到今早新闻，无法保证时效与完整。
+- B. function call 调用搜索工具 ✅：实时获取最新新闻。
+- C. 阿里云百炼 qwen-plus 设置 `enable_search=True` ✅：开启联网搜索，获取实时信息。
+
+> 易错点：**RAG 知识库 ≠ 实时联网搜索**；历史库解决不了「今早」这种强时效问题。补充：这正是 Tool / Function Calling 的典型应用。
 
 ---
 
@@ -583,6 +731,10 @@ index = load_index_from_storage(storage_context)
 | 检索前改写 vs 检索后重排序 | 前者改 query，后者对已召回结果重排 |
 | 语义切片 vs 固定长度切片 | 前者按结构/语义边界，后者机械切分易断语义 |
 | GraphRAG vs Agentic RAG | 前者靠知识图谱，后者靠智能体规划与工具调用 |
+| 建立索引 vs 查询阶段 | 索引处理**文档**（解析/切分/向量化/入库）；查询才把**用户问题**向量化 |
+| 提高 Top-K vs 提高相似度阈值 | 前者扩大候选（召回少时用），后者更严过滤（易漏召回，答案准确但不全面） |
+| RAG 知识库 vs 联网搜索 | 历史库保证不了「今早」的时效性；强时效问题走 function call / 联网搜索 |
+| faithfulness vs context_precision | 前者属生成阶段，后者属检索阶段 |
 
 ---
 
@@ -613,6 +765,8 @@ index = load_index_from_storage(storage_context)
 18. OpenAI Embeddings 指南：https://platform.openai.com/docs/guides/embeddings
 19. 阿里云百炼 文本嵌入 API：https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api
 20. RAGAS 官方文档：https://docs.ragas.io
+21. OWASP Top 10 for LLM Applications（LLM01: Prompt Injection）：https://owasp.org/www-project-top-10-for-large-language-model-applications/
+22. OpenAI Function Calling 指南：https://platform.openai.com/docs/guides/function-calling
 
 ---
 
@@ -644,3 +798,11 @@ index = load_index_from_storage(storage_context)
 - [ ] 文本向量化三认识：数字向量 + 余弦相似度 + 对比学习。
 - [ ] 问题扩写增加**新信息**，问题改写不一定；重排序不增加信息。
 - [ ] 高级 RAG 课题：GraphRAG、可视化工作流、Agentic RAG（框架组件不算）。
+- [ ] `similarity_top_k` 在 `as_query_engine(...)` 创建时设置；用户问题向量化属查询阶段，不属建立索引。
+- [ ] `embedding_models` 管模型实例，不管数据存储。
+- [ ] 召回太少 → 提高 Top-K；阈值过高 → 召回不足、答案准确但不全面。
+- [ ] 指标归属：`context_*` 检索、`faithfulness` 生成、`answer_correctness` 端到端。
+- [ ] `answer_correctness` = 事实 F1（TP/FP/FN）+ 语义相似度，默认权重 0.75/0.25。
+- [ ] 防提示词注入靠权限隔离；敏感词在输入阶段实时拦截。
+- [ ] 强时效问题用联网搜索 / function call，历史 RAG 库不够。
+- [ ] `ask_llm_route` 无法识别类型时默认走 `rag.ask`。
