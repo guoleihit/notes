@@ -150,3 +150,5 @@ create Run + 轮询                →      一次 responses.create()，直接�
 
 - [[简介]]（大模型 / Transformer / 注意力机制）
 - [[KV Cache]]（推理服务层的关键优化）
+- [[Responses API 概览]]（新一代统一接口能干什么）
+- [[Responses API 实战]]（安装、代码、工具闭环、迁移）
